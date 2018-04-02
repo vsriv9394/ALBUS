@@ -1,6 +1,8 @@
+#include <mpi.h>
+
 using namespace std;
 
-struct block{
+struct block{           // For local blocks on each processor
 
     int nx,ny,nz;
 
@@ -31,8 +33,17 @@ struct block{
     double**** res;
     double**** tempres;
 
-    int bc_type[6];
+    int bc_type[2][6];
 
     double bc_states[6][5];
+
+};
+
+struct partition{       // For global blocks defined in the mesh
+
+    int nx,ny,nz;
+    int nbx,nby,nbz;
+    int*** proc;
+    int*** proc_id;
 
 };

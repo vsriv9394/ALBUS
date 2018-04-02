@@ -6,125 +6,484 @@ using namespace std;
 
 
 
-void bc_flux(int nblock, block* mesh){
+void bc_flux(int nblock, block* mesh, partition* map){
 
     for(int block_id=0; block_id<nblock; block_id++){
-    
-        for(int bc=0; bc<6; bc++){
         
-            // Periodic boundary condition
+        int rank;
+        MPI_Comm_rank(MPI_COMM_WORLD,&rank);
+        
+        // Sending and receiving data from left to the right cells
+        if (mesh[block_id].bc_type[1][0]>=0){
+        
+            int proc_r      = mesh[block_id].bc_type[1][0];
+            int proc_r_id   = mesh[block_id].bc_type[1][1];
+            
+            if(proc_r!=rank){
 
-            if (mesh[block_id].bc_type[bc]<=0){
-            
-
-                if (bc==0){
-                
-                    for(int j=0; j<mesh[block_id].ny-1; j++){
-                    
-                        for(int k=0; k<mesh[block_id].nz-1; k++){
-                        
-                            Roe_flux(mesh[ -mesh[block_id].bc_type[bc] ].states[ mesh[ -mesh[block_id].bc_type[bc] ].nx-1 ][j][k],\
-                                     mesh[ block_id ].states[0][j][k],\
-                                     mesh[ block_id ].xn[0][j][k],\
-                                     mesh[ block_id ].xfluxes[0][j][k]);
-                        
-                        }
-                    
-                    }
-                
-                }
-            
-                if (bc==1){
-                
-                    for(int j=0; j<mesh[block_id].ny-1; j++){
-                    
-                        for(int k=0; k<mesh[block_id].nz-1; k++){
-                        
-                            Roe_flux(mesh[ block_id ].states[ mesh[block_id].nx-1 ][j][k],\
-                                     mesh[ -mesh[block_id].bc_type[bc] ].states[0][j][k],\
-                                     mesh[ block_id ].xn[ mesh[block_id].nx ][j][k],\
-                                     mesh[ block_id ].xfluxes[ mesh[block_id].nx ][j][k]);
-                        
-                        }
-                    
-                    }
-                
-                }
-            
-                if (bc==2){
-                
-                    for(int i=0; i<mesh[block_id].nx-1; i++){
-                    
-                        for(int k=0; k<mesh[block_id].nz-1; k++){
-                        
-                            Roe_flux(mesh[ -mesh[block_id].bc_type[bc] ].states[i][ mesh[ -mesh[block_id].bc_type[bc] ].ny-1 ][k],\
-                                     mesh[ block_id ].states[i][0][k],\
-                                     mesh[ block_id ].yn[i][0][k],\
-                                     mesh[ block_id ].yfluxes[i][0][k]);
-                        
-                        }
-                    
-                    }
-                
-                }
-            
-                if (bc==3){
-                
-                    for(int i=0; i<mesh[block_id].nx-1; i++){
-                    
-                        for(int k=0; k<mesh[block_id].nz-1; k++){
-                        
-                            Roe_flux(mesh[ block_id ].states[i][ mesh[block_id].ny-1 ][k],\
-                                     mesh[ -mesh[block_id].bc_type[bc] ].states[i][0][k],\
-                                     mesh[ block_id ].yn[i][ mesh[block_id].ny ][k],\
-                                     mesh[ block_id ].yfluxes[i][ mesh[block_id].ny ][k]);
-                        
-                        }
-                    
-                    }
-                
-                }
-            
-                if (bc==4){
-                
-                    for(int i=0; i<mesh[block_id].nx-1; i++){
-                    
-                        for(int j=0; j<mesh[block_id].ny-1; j++){
-                        
-                            Roe_flux(mesh[ -mesh[block_id].bc_type[bc] ].states[i][j][ mesh[ -mesh[block_id].bc_type[bc] ].nz-1 ],\
-                                     mesh[ block_id ].states[i][j][0],\
-                                     mesh[ block_id ].zn[i][j][0],\
-                                     mesh[ block_id ].zfluxes[i][j][0]);
-                        
-                        }
-                    
-                    }
-                
-                }
-            
-                if (bc==5){
-                
-                    for(int i=0; i<mesh[block_id].nx-1; i++){
-                    
-                        for(int j=0; j<mesh[block_id].ny-1; j++){
-                        
-                            Roe_flux(mesh[ block_id ].states[i][j][ mesh[block_id].nz-1 ],\
-                                     mesh[ -mesh[block_id].bc_type[bc] ].states[i][j][0],\
-                                     mesh[ block_id ].zn[i][j][ mesh[block_id].nz ],\
-                                     mesh[ block_id ].zfluxes[i][j][ mesh[block_id].nz ]);
-                        
-                        }
-                    
-                    }
-                
-                }
-
+                int siz_s[4]  = {mesh[block_id].nx-1, mesh[block_id].ny-1, mesh[block_id].nz-1, 5};
+                int siz_sa[4] = {1, mesh[block_id].ny-1, mesh[block_id].nz-1, 5};
+                int starts[4]    = {mesh[block_id].nx-2,0,0,0};
+                MPI_Datatype Right_boundary;
+                MPI_Type_create_subarray(4, siz_s, siz_sa, starts, MPI_ORDER_C, MPI_DOUBLE, &Right_boundary);
+                MPI_Type_commit(&Right_boundary);
+                MPI_Request* req;
+                MPI_Isend(&(mesh[block_id].states[0][0][0][0]), 1, Right_boundary, proc_r, proc_r*1000+proc_r_id, MPI_COMM_WORLD, req);
             
             }
 
+        }
+
+        if (mesh[block_id].bc_type[0][0]>=0){
+
+            int proc_l      = mesh[block_id].bc_type[0][0];
+            int proc_l_id   = mesh[block_id].bc_type[0][1];
+            
+            double**** left_states;
+            left_states     = new double***[1];
+            left_states[0]  = new double**[mesh[block_id].ny-1];
+            
+            for(int j=0; j<mesh[block_id].ny-1; j++){
+
+                left_states[0][j] = new double*[mesh[block_id].nz-1];
+                    
+                for(int k=0; k<mesh[block_id].nz-1; k++){
+            
+                    left_states[0][j][k] = new double[5];
+            
+                }
+
+            }
+
+            if(proc_l!=rank){
+            
+                MPI_Request* req;
+                MPI_Irecv(&(left_states[0][0][0][0]), (mesh[block_id].ny-1)*(mesh[block_id].nz-1)*5, MPI_DOUBLE, proc_l, rank*1000+block_id, MPI_COMM_WORLD, req);
+                MPI_Wait(req, MPI_STATUS_IGNORE);
+                
+            }
+
+            for(int j=0; j<mesh[block_id].ny-1; j++){
+                    
+                for(int k=0; k<mesh[block_id].nz-1; k++){
+            
+                    if(proc_l==rank){
+
+                        for(int sid=0; sid<5; sid++){
+
+                            left_states[0][j][k][sid] = mesh[proc_l_id].states[mesh[proc_l_id].nx-2][j][k][sid];
+
+                        }
+
+                    }
+
+                    Roe_flux( left_states[0][j][k],\
+                              mesh[ block_id ].states[0][j][k],\
+                              mesh[ block_id ].xn[0][j][k],\
+                              mesh[ block_id ].xfluxes[0][j][k]);
+            
+                }
+
+            }
+
+            delete[] left_states;
+            
+        }
+        
+        // Sending and receiving data from right to the left cells
+        if (mesh[block_id].bc_type[0][0]>=0){
+        
+            int proc_l      = mesh[block_id].bc_type[0][0];
+            int proc_l_id   = mesh[block_id].bc_type[0][1];
+            
+            if(proc_l!=rank){
+
+                int siz_s[4]  = {mesh[block_id].nx-1, mesh[block_id].ny-1, mesh[block_id].nz-1, 5};
+                int siz_sa[4] = {1, mesh[block_id].ny-1, mesh[block_id].nz-1, 5};
+                int starts[4] = {0,0,0,0};
+                MPI_Datatype Left_boundary;
+                MPI_Type_create_subarray(4, siz_s, siz_sa, starts, MPI_ORDER_C, MPI_DOUBLE, &Left_boundary);
+                MPI_Type_commit(&Left_boundary);
+                MPI_Request* req;
+                MPI_Isend(&(mesh[block_id].states[0][0][0][0]), 1, Left_boundary, proc_l, proc_l*1000+proc_l_id, MPI_COMM_WORLD, req);
+            
+            }
+
+        }
+
+        if (mesh[block_id].bc_type[1][0]>=0){
+
+            int proc_r      = mesh[block_id].bc_type[1][0];
+            int proc_r_id   = mesh[block_id].bc_type[1][1];
+            
+            double**** right_states;
+            right_states     = new double***[1];
+            right_states[0]  = new double**[mesh[block_id].ny-1];
+            
+            for(int j=0; j<mesh[block_id].ny-1; j++){
+
+                right_states[0][j] = new double*[mesh[block_id].nz-1];
+                    
+                for(int k=0; k<mesh[block_id].nz-1; k++){
+            
+                    right_states[0][j][k] = new double[5];
+            
+                }
+
+            }
+
+            if(proc_r!=rank){
+            
+                MPI_Request* req;
+                MPI_Irecv(&(right_states[0][0][0][0]), (mesh[block_id].ny-1)*(mesh[block_id].nz-1)*5, MPI_DOUBLE, proc_r, rank*1000+block_id, MPI_COMM_WORLD, req);
+                MPI_Wait(req, MPI_STATUS_IGNORE);
+                
+            }
+
+            for(int j=0; j<mesh[block_id].ny-1; j++){
+                    
+                for(int k=0; k<mesh[block_id].nz-1; k++){
+            
+                    if(proc_r==rank){
+
+                        for(int sid=0; sid<5; sid++){
+
+                            right_states[0][j][k][sid] = mesh[proc_r_id].states[0][j][k][sid];
+
+                        }
+
+                    }
+
+                    Roe_flux( mesh[ block_id ].states[mesh[block_id].nx-2][j][k],\
+                              right_states[0][j][k],\
+                              mesh[ block_id ].xn[mesh[block_id].nx-1][j][k],\
+                              mesh[ block_id ].xfluxes[mesh[block_id].nx-1][j][k]);
+            
+                }
+
+            }
+
+            delete[] right_states;
+            
+        }
+
+        // Sending and receiving data from bottom to the top cells
+        if (mesh[block_id].bc_type[3][0]>=0){
+        
+            int proc_r      = mesh[block_id].bc_type[3][0];
+            int proc_r_id   = mesh[block_id].bc_type[3][1];
+            
+            if(proc_r!=rank){
+
+                int siz_s[4]  = {mesh[block_id].nx-1, mesh[block_id].ny-1, mesh[block_id].nz-1, 5};
+                int siz_sa[4] = {mesh[block_id].nx-1, 1, mesh[block_id].nz-1, 5};
+                int starts[4]    = {0,mesh[block_id].ny-2,0,0};
+                MPI_Datatype Right_boundary;
+                MPI_Type_create_subarray(4, siz_s, siz_sa, starts, MPI_ORDER_C, MPI_DOUBLE, &Right_boundary);
+                MPI_Type_commit(&Right_boundary);
+                MPI_Request* req;
+                MPI_Isend(&(mesh[block_id].states[0][0][0][0]), 1, Right_boundary, proc_r, proc_r*1000+proc_r_id, MPI_COMM_WORLD, req);
+            
+            }
+
+        }
+
+        if (mesh[block_id].bc_type[2][0]>=0){
+
+            int proc_l      = mesh[block_id].bc_type[2][0];
+            int proc_l_id   = mesh[block_id].bc_type[2][1];
+            
+            double**** left_states;
+            left_states     = new double***[mesh[block_id].nx-1];
+
+            for(int i=0; i<mesh[block_id].nx-1; i++){
+
+                left_states[i]      = new double**[1];
+                left_states[i][0]   = new double*[mesh[block_id].nz-1];
+                    
+                for(int k=0; k<mesh[block_id].nz-1; k++){
+            
+                    left_states[i][0][k] = new double[5];
+            
+                }
+
+            }
+
+            if(proc_l!=rank){
+            
+                MPI_Request* req;
+                MPI_Irecv(&(left_states[0][0][0][0]), (mesh[block_id].nx-1)*(mesh[block_id].nz-1)*5, MPI_DOUBLE, proc_l, rank*1000+block_id, MPI_COMM_WORLD, req);
+                MPI_Wait(req, MPI_STATUS_IGNORE);
+                
+            }
+
+            for(int i=0; i<mesh[block_id].nx-1; i++){
+                    
+                for(int k=0; k<mesh[block_id].nz-1; k++){
+            
+                    if(proc_l==rank){
+
+                        for(int sid=0; sid<5; sid++){
+
+                            left_states[i][0][k][sid] = mesh[proc_l_id].states[i][mesh[proc_l_id].ny-2][k][sid];
+
+                        }
+
+                    }
+
+                    Roe_flux( left_states[i][0][k],\
+                              mesh[ block_id ].states[i][0][k],\
+                              mesh[ block_id ].yn[i][0][k],\
+                              mesh[ block_id ].yfluxes[i][0][k]);
+            
+                }
+
+            }
+
+            delete[] left_states;
+            
+        }
+        
+        // Sending and receiving data from top to the bottom cells
+        if (mesh[block_id].bc_type[2][0]>=0){
+        
+            int proc_l      = mesh[block_id].bc_type[2][0];
+            int proc_l_id   = mesh[block_id].bc_type[2][1];
+            
+            if(proc_l!=rank){
+
+                int siz_s[4]  = {mesh[block_id].nx-1, mesh[block_id].ny-1, mesh[block_id].nz-1, 5};
+                int siz_sa[4] = {mesh[block_id].nx-1, 1, mesh[block_id].nz-1, 5};
+                int starts[4] = {0,0,0,0};
+                MPI_Datatype Left_boundary;
+                MPI_Type_create_subarray(4, siz_s, siz_sa, starts, MPI_ORDER_C, MPI_DOUBLE, &Left_boundary);
+                MPI_Type_commit(&Left_boundary);
+                MPI_Request* req;
+                MPI_Isend(&(mesh[block_id].states[0][0][0][0]), 1, Left_boundary, proc_l, proc_l*1000+proc_l_id, MPI_COMM_WORLD, req);
+            
+            }
+
+        }
+
+        if (mesh[block_id].bc_type[3][0]>=0){
+
+            int proc_r      = mesh[block_id].bc_type[3][0];
+            int proc_r_id   = mesh[block_id].bc_type[3][1];
+            
+            double**** right_states;
+            right_states  = new double***[mesh[block_id].ny-1];
+            
+            for(int i=0; i<mesh[block_id].nx-1; i++){
+
+                right_states[i]        = new double**[1];
+                right_states[i][0]     = new double*[mesh[block_id].nz-1];
+                    
+                for(int k=0; k<mesh[block_id].nz-1; k++){
+            
+                    right_states[i][0][k] = new double[5];
+            
+                }
+
+            }
+
+            if(proc_r!=rank){
+            
+                MPI_Request* req;
+                MPI_Irecv(&(right_states[0][0][0][0]), (mesh[block_id].nx-1)*(mesh[block_id].nz-1)*5, MPI_DOUBLE, proc_r, rank*1000+block_id, MPI_COMM_WORLD, req);
+                MPI_Wait(req, MPI_STATUS_IGNORE);
+                
+            }
+
+            for(int i=0; i<mesh[block_id].nx-1; i++){
+                    
+                for(int k=0; k<mesh[block_id].nz-1; k++){
+            
+                    if(proc_r==rank){
+
+                        for(int sid=0; sid<5; sid++){
+
+                            right_states[i][0][k][sid] = mesh[proc_r_id].states[i][0][k][sid];
+
+                        }
+
+                    }
+
+                    Roe_flux( mesh[ block_id ].states[i][mesh[block_id].ny-2][k],\
+                              right_states[i][0][k],\
+                              mesh[ block_id ].yn[i][mesh[block_id].ny-1][k],\
+                              mesh[ block_id ].yfluxes[i][mesh[block_id].ny-1][k]);
+            
+                }
+
+            }
+
+            delete[] right_states;
+            
+        }
+
+        // Sending and receiving data from back to the front cells
+        if (mesh[block_id].bc_type[5][0]>=0){
+        
+            int proc_r      = mesh[block_id].bc_type[5][0];
+            int proc_r_id   = mesh[block_id].bc_type[5][1];
+            
+            if(proc_r!=rank){
+
+                int siz_s[4]  = {mesh[block_id].nx-1, mesh[block_id].ny-1, mesh[block_id].nz-1, 5};
+                int siz_sa[4] = {mesh[block_id].nx-1, mesh[block_id].ny-1, 1, 5};
+                int starts[4] = {0,0,mesh[block_id].nz-2,0};
+                MPI_Datatype Right_boundary;
+                MPI_Type_create_subarray(4, siz_s, siz_sa, starts, MPI_ORDER_C, MPI_DOUBLE, &Right_boundary);
+                MPI_Type_commit(&Right_boundary);
+                MPI_Request* req;
+                MPI_Isend(&(mesh[block_id].states[0][0][0][0]), 1, Right_boundary, proc_r, proc_r*1000+proc_r_id, MPI_COMM_WORLD, req);
+            
+            }
+
+        }
+
+        if (mesh[block_id].bc_type[4][0]>=0){
+
+            int proc_l      = mesh[block_id].bc_type[4][0];
+            int proc_l_id   = mesh[block_id].bc_type[4][1];
+            
+            double**** left_states;
+            left_states     = new double***[mesh[block_id].nx-1];
+            
+            for(int i=0; i<mesh[block_id].nx-1; i++){
+
+                left_states[i] = new double**[mesh[block_id].ny-1];
+                    
+                for(int j=0; j<mesh[block_id].ny-1; j++){
+            
+                    left_states[i][j] = new double*[1];
+                    left_states[i][j][0] = new double[5];
+            
+                }
+
+            }
+
+            if(proc_l!=rank){
+            
+                MPI_Request* req;
+                MPI_Irecv(&(left_states[0][0][0][0]), (mesh[block_id].ny-1)*(mesh[block_id].nx-1)*5, MPI_DOUBLE, proc_l, rank*1000+block_id, MPI_COMM_WORLD, req);
+                MPI_Wait(req, MPI_STATUS_IGNORE);
+                
+            }
+
+            for(int i=0; i<mesh[block_id].nx-1; i++){
+                    
+                for(int j=0; j<mesh[block_id].ny-1; j++){
+            
+                    if(proc_l==rank){
+
+                        for(int sid=0; sid<5; sid++){
+
+                            left_states[i][j][0][sid] = mesh[proc_l_id].states[i][j][mesh[proc_l_id].nz-2][sid];
+
+                        }
+
+                    }
+
+                    Roe_flux( left_states[i][j][0],\
+                              mesh[ block_id ].states[i][j][0],\
+                              mesh[ block_id ].zn[i][j][0],\
+                              mesh[ block_id ].zfluxes[i][j][0]);
+            
+                }
+
+            }
+
+            delete[] left_states;
+            
+        }
+        
+        // Sending and receiving data from front to the back cells
+        if (mesh[block_id].bc_type[4][0]>=0){
+        
+            int proc_l      = mesh[block_id].bc_type[4][0];
+            int proc_l_id   = mesh[block_id].bc_type[4][1];
+            
+            if(proc_l!=rank){
+
+                int siz_s[4]  = {mesh[block_id].nx-1, mesh[block_id].ny-1, mesh[block_id].nz-1, 5};
+                int siz_sa[4] = {mesh[block_id].nx-1, mesh[block_id].ny-1, 1, 5};
+                int starts[4] = {0,0,0,0};
+                MPI_Datatype Left_boundary;
+                MPI_Type_create_subarray(4, siz_s, siz_sa, starts, MPI_ORDER_C, MPI_DOUBLE, &Left_boundary);
+                MPI_Type_commit(&Left_boundary);
+                MPI_Request* req;
+                MPI_Isend(&(mesh[block_id].states[0][0][0][0]), 1, Left_boundary, proc_l, proc_l*1000+proc_l_id, MPI_COMM_WORLD, req);
+            
+            }
+
+        }
+
+        if (mesh[block_id].bc_type[5][0]>=0){
+
+            int proc_r      = mesh[block_id].bc_type[5][0];
+            int proc_r_id   = mesh[block_id].bc_type[5][1];
+            
+            double**** right_states;
+            right_states     = new double***[mesh[block_id].nx-1];
+            
+            for(int i=0; i<mesh[block_id].nx-1; i++){
+
+                right_states[i] = new double**[mesh[block_id].ny-1];
+                    
+                for(int j=0; j<mesh[block_id].ny-1; j++){
+            
+                    right_states[i][j] = new double*[1];
+                    right_states[i][j][0] = new double[5];
+            
+                }
+
+            }
+
+            if(proc_r!=rank){
+            
+                MPI_Request* req;
+                MPI_Irecv(&(right_states[0][0][0][0]), (mesh[block_id].nx-1)*(mesh[block_id].ny-1)*5, MPI_DOUBLE, proc_r, rank*1000+block_id, MPI_COMM_WORLD, req);
+                MPI_Wait(req, MPI_STATUS_IGNORE);
+                
+            }
+
+            for(int i=0; i<mesh[block_id].nx-1; i++){
+                    
+                for(int j=0; j<mesh[block_id].ny-1; j++){
+            
+                    if(proc_r==rank){
+
+                        for(int sid=0; sid<5; sid++){
+
+                            right_states[i][j][0][sid] = mesh[proc_r_id].states[i][j][0][sid];
+
+                        }
+
+                    }
+
+                    Roe_flux( mesh[ block_id ].states[i][j][mesh[block_id].nz-2],\
+                              right_states[i][j][0],\
+                              mesh[ block_id ].zn[i][j][mesh[block_id].nz-1],\
+                              mesh[ block_id ].zfluxes[i][j][mesh[block_id].nz-1]);
+            
+                }
+
+            }
+
+            delete[] right_states;
+            
+        }
+
+
+
+        // All other boundary conditions
+        
+        for(int bc=0; bc<6; bc++){
+        
             // Inviscid wall
 
-            if(mesh[block_id].bc_type[bc]==1){
+            if(mesh[block_id].bc_type[bc][0]==-1){
 
                 if (bc==0){
                 
@@ -376,7 +735,7 @@ void bc_flux(int nblock, block* mesh){
 
             // Far-field condition
 
-            if(mesh[block_id].bc_type[bc]==2){
+            if(mesh[block_id].bc_type[bc][0]==-2){
 
                 if (bc==0){
                 
@@ -502,7 +861,7 @@ void bc_flux(int nblock, block* mesh){
 
             // Inflow condition
 
-            if(mesh[block_id].bc_type[bc]==3){
+            if(mesh[block_id].bc_type[bc][0]==-3){
 
                 if (bc==0){
                 
@@ -904,7 +1263,7 @@ void bc_flux(int nblock, block* mesh){
 
             // Subsonic outflow
 
-            if(mesh[block_id].bc_type[bc]==4){
+            if(mesh[block_id].bc_type[bc][0]==-4){
 
                 if (bc==0){
                 
@@ -1246,7 +1605,7 @@ void bc_flux(int nblock, block* mesh){
 
             // Supersonic outflow
 
-            if(mesh[block_id].bc_type[bc]==5){
+            if(mesh[block_id].bc_type[bc][0]==-5){
 
                 if (bc==0){
                 
@@ -1498,9 +1857,9 @@ void bc_flux(int nblock, block* mesh){
 
 
 
-void gather_fluxes(int nblock, block* mesh){
+void gather_fluxes(int nblock, block* mesh, partition* map){
 
-    bc_flux(nblock, mesh);
+    bc_flux(nblock, mesh, map);
 
     for(int block_id=0; block_id<nblock; block_id++){
     
@@ -1563,11 +1922,11 @@ void gather_fluxes(int nblock, block* mesh){
 
 
 
-void calc_residuals(int nblock, block* mesh){
+void calc_residuals(int nblock, block* mesh, partition* map){
 
     for(int block_id=0; block_id<nblock; block_id++){
     
-        gather_fluxes(nblock,mesh);
+        gather_fluxes(nblock,mesh,map);
         
         for(int i=0; i<mesh[block_id].nx-1; i++){
         
