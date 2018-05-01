@@ -44,8 +44,7 @@ void Roe_flux(double* STL, double* STR, double* n, double* fluxes){
     FL[3]   = STL[3]*unL+pL*n[2];
     FL[4]   = rHL*unL;
     
-    
-    
+    ////////////////////////////////////////////////////////////////////////////////////////   
     
     rR = STR[0]+1e-10;
 
@@ -76,7 +75,7 @@ void Roe_flux(double* STL, double* STR, double* n, double* fluxes){
     FR[4]   = rHR*unR;
     
     
-    
+    ////////////////////////////////////////////////////////////////////////////////////////
     
     for(int j=0; j<5; j++){
         
@@ -105,9 +104,7 @@ void Roe_flux(double* STL, double* STR, double* n, double* fluxes){
     ci     = sqrt(c2i);
     ci1    = 1.0/ci;
     
-    
-    
-    
+    ////////////////////////////////////////////////////////////////////////////////////////
 
     l[0]    = ucp+ci;
     l[1]    = ucp-ci;

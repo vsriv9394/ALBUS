@@ -6,7 +6,7 @@
 
 using namespace std;
 
-void read_mesh(char* meshfile, int nblock_local, block* mesh, partition* map){
+void read_mesh(char* meshfile, int& nblock_local, int& nblock_global, block* mesh, partition* map){
 
     // Initialize number of blocks on this processor to zero
     
@@ -18,13 +18,13 @@ void read_mesh(char* meshfile, int nblock_local, block* mesh, partition* map){
     MPI_File mfile;                         // File variable for the mesh file
     MPI_Status* status = MPI_STATUS_IGNORE; // Dummy MPI status
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);   // Assign the rank variable
-    MPI_Comm_size(MPI_COMM_WORLD,&size);    // Assign the size variable
+    MPI_Comm_size(MPI_COMM_WORLD, &size);   // Assign the size variable
 
     // Opening the mesh file
     
     MPI_File_open(MPI_COMM_WORLD, meshfile, MPI_MODE_RDONLY, MPI_INFO_NULL, &mfile);
     
-    int nblock_global;                                      // Number of blocks in the mesh file
+    // int nblock_global;                                      // Number of blocks in the mesh file
     MPI_File_read(mfile,&nblock_global,1,MPI_INT,status);   // Read "nblock_global" from the mesh file
     
     map = new partition[nblock_global];                     // Initialize partition array "map"
@@ -306,9 +306,9 @@ void read_mesh(char* meshfile, int nblock_local, block* mesh, partition* map){
                 
             if(global_block_id[count]==m){
 
-                mesh[count].nx = map[m].nx/map[m].nbx;
-                mesh[count].ny = map[m].ny/map[m].nby;
-                mesh[count].nz = map[m].nz/map[m].nbz;
+                mesh[count].nx = ((map[m].nx-1)/map[m].nbx)+1;
+                mesh[count].ny = ((map[m].ny-1)/map[m].nby)+1;
+                mesh[count].nz = ((map[m].nz-1)/map[m].nbz)+1;
                 count++;
 
             }
@@ -347,16 +347,16 @@ void read_mesh(char* meshfile, int nblock_local, block* mesh, partition* map){
 
                 int x1,xe,y1,ye,z1,ze;
                 
-                x1 = ibx[count]*map[m].nx/map[m].nbx;
-                xe = (ibx[count]+1)*map[m].nx/map[m].nbx;
+                x1 = ibx[count]*(map[m].nx-1)/map[m].nbx;
+                xe = (ibx[count]+1)*(map[m].nx-1)/map[m].nbx;
 
-                y1 = iby[count]*map[m].ny/map[m].nby;
-                ye = (iby[count]+1)*map[m].ny/map[m].nby;
+                y1 = iby[count]*(map[m].ny-1)/map[m].nby;
+                ye = (iby[count]+1)*(map[m].ny-1)/map[m].nby;
 
-                z1 = ibz[count]*map[m].nz/map[m].nbz;
-                ze = (ibz[count]+1)*map[m].nz/map[m].nbz;
+                z1 = ibz[count]*(map[m].nz-1)/map[m].nbz;
+                ze = (ibz[count]+1)*(map[m].nz-1)/map[m].nbz;
 
-                MPI_File_seek(mfile,( z1*map[m].nx*map[m].ny + y1*map[m].nx + x1)*3*sizeof(MPI_DOUBLE),MPI_SEEK_CUR);
+                MPI_File_seek(mfile, (z1*map[m].nx*map[m].ny + y1*map[m].nx + x1)*3*sizeof(MPI_DOUBLE), MPI_SEEK_CUR);
                 
                 for(int k=0; k<mesh[count].nz; k++){
 
@@ -371,11 +371,11 @@ void read_mesh(char* meshfile, int nblock_local, block* mesh, partition* map){
 
                         }
 
-                        MPI_File_seek(mfile,(map[m].nx-(xe-x1))*3*sizeof(MPI_DOUBLE),MPI_SEEK_CUR);
+                        MPI_File_seek(mfile,(map[m].nx-(xe-x1+1))*3*sizeof(MPI_DOUBLE),MPI_SEEK_CUR);
 
                     }
 
-                    MPI_File_seek(mfile,(map[m].nx-(xe-x1) + map[m].nx*(map[m].ny-(ye-y1)))*3*sizeof(MPI_DOUBLE),MPI_SEEK_CUR);
+                    MPI_File_seek(mfile,(map[m].nx-(xe-x1+1) + map[m].nx*(map[m].ny-(ye-y1+1)))*3*sizeof(MPI_DOUBLE),MPI_SEEK_CUR);
 
                 }
                 
@@ -388,6 +388,8 @@ void read_mesh(char* meshfile, int nblock_local, block* mesh, partition* map){
             else{
 
                 MPI_File_seek(mfile,map[m].nx*map[m].ny*map[m].nz*3*sizeof(MPI_DOUBLE),MPI_SEEK_CUR);
+                
+                count++;
 
             }
 
